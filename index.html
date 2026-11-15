@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#16191c">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+/* ネットなしで動かすための基本設定（文字はスマホに入っているフォントを使う） */
+:root { color-scheme: light; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); box-sizing: border-box; height: 100%; }
+body { margin: 0; font-size: 14px; }
+[hidden] { display: none !important; }
+</style>
+<title>大和路線ナビ</title>
+</head>
+<body>
+<style>
+/* Layout: 横向きスマホで端末の画面を全面表示。上に黒い矢印帯（次駅）、中央に種別・行先、右に両数、下に状態バー。設定と時刻表は⚙で開く別画面 */
+:root {
+  --bezel: #eceeef;
+  --screen: #ffffff;
+  --ink: #111417;
+  --muted: #5d676f;
+  --band: #16191c;
+  --green: #1f9a3e;
+  --amber: #e08a00;
+  --red: #d7322a;
+  --rule: #c9cfd4;
+  --sheet: #f7f8f9;
+  --f-body: "Noto Sans JP", "Noto Sans CJK JP", "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+  --f-num: ui-monospace, "Consolas", monospace;
+  /* 画面の大きさの基準。横向きは高さ、縦向きは幅に合わせる */
+  --u: 1vh;
+}
+@media (orientation: portrait) { :root { --u: .6vw; } }
+html, body { height: 100%; background: var(--bezel); color: var(--ink); }
+body {
+  font-family: var(--f-body); overflow: hidden; box-sizing: border-box;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 10px;
+  -webkit-tap-highlight-color: transparent;
+}
+.num { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
+
+/* ---- 端末の画面 ---- */
+.screen {
+  height: 100%; box-sizing: border-box;
+  background: var(--screen); border: 2px solid #2a2f33; border-radius: 6px;
+  display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto 1fr auto;
+  overflow: hidden; user-select: none;
+}
+@media (orientation: portrait) { .screen { height: auto; } body { overflow: auto; } }
+
+.band {
+  grid-column: 1 / -1; background: var(--band); color: #fff;
+  display: flex; align-items: center; gap: calc(var(--u) * 2.5); padding: calc(var(--u) * 1.8) calc(var(--u) * 3);
+  min-width: 0;
+}
+.arrow {
+  flex: none; width: calc(var(--u) * 9); height: calc(var(--u) * 6); background: #fff;
+  clip-path: polygon(0 20%, 60% 20%, 60% 0, 100% 50%, 60% 100%, 60% 80%, 0 80%);
+}
+.band.near .arrow { background: var(--amber); animation: blink 1s steps(2) infinite; }
+.band.end .arrow { background: var(--red); clip-path: none; width: calc(var(--u) * 5); height: calc(var(--u) * 5); }
+@keyframes blink { 50% { opacity: .3; } }
+.band .lbl { font-size: calc(var(--u) * 4); letter-spacing: .12em; color: #c9d0d5; white-space: nowrap; }
+.band .stn { font-size: calc(var(--u) * 8); font-weight: 700; letter-spacing: .06em; min-width: 0; overflow: hidden; white-space: nowrap; line-height: 1.15; }
+.band .tm { margin-left: auto; font-size: calc(var(--u) * 6.5); white-space: nowrap; }
+
+.main {
+  padding: calc(var(--u) * 2) calc(var(--u) * 3); min-width: 0;
+  display: grid; align-content: center; cursor: pointer;
+}
+.kind {
+  font-size: calc(var(--u) * 20); font-weight: 700; line-height: 1.05; letter-spacing: .1em;
+  color: var(--kind, var(--ink)); text-align: center; white-space: nowrap; overflow: hidden;
+  padding-bottom: calc(var(--u) * 1);
+}
+.dest {
+  font-size: calc(var(--u) * 17); font-weight: 700; letter-spacing: .06em; line-height: 1.15;
+  border: calc(var(--u) * .7) solid var(--ink); padding: 0 calc(var(--u) * 2); text-align: center;
+  white-space: nowrap; overflow: hidden;
+}
+.cars {
+  align-self: center; margin-right: calc(var(--u) * 3); cursor: pointer;
+  background: var(--green); color: #fff; width: calc(var(--u) * 36); aspect-ratio: 1; max-width: 100%;
+  display: grid; place-items: center; align-content: center;
+}
+.cars b { font-family: var(--f-num); font-size: calc(var(--u) * 24); line-height: .9; font-weight: 400; }
+.cars span { font-size: calc(var(--u) * 4.5); letter-spacing: .2em; }
+
+.foot {
+  grid-column: 1 / -1; border-top: 1px solid var(--rule);
+  display: flex; align-items: center; gap: 10px; padding: 4px 10px;
+  font-size: max(13px, calc(var(--u) * 3.6)); color: var(--muted); min-width: 0;
+}
+.pill { flex: none; font-weight: 700; padding: 2px 10px; border-radius: 3px; color: #fff; letter-spacing: .1em; }
+.pill.stop { background: var(--green); }
+.pill.run { background: #3b4650; }
+.pill.near { background: var(--amber); }
+.pill.end { background: var(--red); }
+.foot .msg { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.foot .clock { flex: none; font-size: max(16px, calc(var(--u) * 5)); color: var(--ink); }
+.foot button { flex: none; min-width: 44px; min-height: 40px; padding: 4px 10px; }
+
+/* 縦向きのときのお知らせ */
+.rotate { display: none; margin-top: 12px; color: var(--muted); font-size: .9rem; text-align: center; }
+@media (orientation: portrait) { .rotate { display: block; } }
+
+/* ---- 共通の部品 ---- */
+select, input, button { font: inherit; color: var(--ink); }
+button { background: #fff; border: 1px solid var(--rule); border-radius: 6px; padding: 10px 14px; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--ink); }
+button:disabled { opacity: .35; cursor: default; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.primary { background: var(--green); border-color: var(--green); color: #fff; font-weight: 700; }
+
+/* ---- 設定画面 ---- */
+.sheet {
+  position: fixed; inset: 0; z-index: 20; background: var(--sheet); overflow-y: auto;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) calc(24px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+.sheet-in { max-width: 900px; margin: 0 auto; display: grid; gap: 14px; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sheet-head h1 { margin: 0; font-size: 1.1rem; }
+.cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 640px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+.box { background: #fff; border: 1px solid var(--rule); border-radius: 8px; padding: 14px; display: grid; gap: 12px; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+label { display: grid; gap: 6px; font-size: .78rem; color: var(--muted); letter-spacing: .06em; }
+select, input { background: #fff; border: 1px solid var(--rule); border-radius: 6px; padding: 9px 10px; font-size: 1rem; width: 100%; box-sizing: border-box; }
+.nav { display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 10px; }
+.note { color: var(--muted); font-size: .78rem; line-height: 1.7; margin: 0; }
+.err { color: var(--red); font-size: .85rem; margin: 0; }
+
+.staff { padding: 0; overflow: hidden; gap: 0; }
+.staff h2 { margin: 0; font-size: .8rem; letter-spacing: .12em; color: var(--muted); padding: 10px 14px; border-bottom: 1px solid var(--rule); font-weight: 400; }
+.staff-box { max-height: 60vh; overflow-y: auto; }
+table { width: 100%; border-collapse: collapse; }
+th { position: sticky; top: 0; background: #f3f5f6; font-size: .72rem; font-weight: 400; color: var(--muted); letter-spacing: .1em; text-align: left; padding: 6px 12px; border-bottom: 1px solid var(--rule); }
+td { padding: 6px 12px; border-bottom: 1px solid #edf0f2; }
+td.t { font-family: var(--f-num); font-size: 1.05rem; width: 4.5em; }
+tr.passed td { color: #a3abb1; }
+tr.cur td { background: #fff4dc; font-weight: 700; }
+tr.cur td:first-child { box-shadow: inset 4px 0 0 var(--amber); }
+tr.pass td { color: #8a949b; }
+tr.pass.passed td { color: #c3c9cd; }
+td.mk { width: 4em; text-align: center; padding-block: 3px; }
+.mk button { padding: 3px 10px; font-size: .85rem; border-radius: 4px; }
+.mk button.stop { background: var(--green); border-color: var(--green); color: #fff; }
+.mk button:disabled { opacity: 1; cursor: default; }
+@media (prefers-reduced-motion: reduce) { .band.near .arrow { animation: none; } }
+</style>
+
+<div class="screen" id="screen" aria-label="運転士用ナビ画面">
+  <div class="band" id="band" aria-live="polite">
+    <span class="arrow"></span>
+    <span class="lbl" id="nextLbl">次</span>
+    <span class="stn" id="nextName">木津</span>
+    <span class="tm num" id="nextTime">着 10:06</span>
+  </div>
+  <div class="main" id="tapMain" title="タップで進む">
+    <div class="kind" id="kindV">普通</div>
+    <div class="dest" id="dest">JR難波</div>
+  </div>
+  <div class="cars" id="tapCars" title="タップで進む"><b id="carsV">4</b><span>両</span></div>
+  <div class="foot">
+    <span class="pill stop" id="pill">停車中</span>
+    <span class="msg" id="msg">加茂 発車待ち</span>
+    <span class="clock num" id="clock">10:00</span>
+    <button id="prev" aria-label="戻る">◀</button>
+    <button id="auto" aria-pressed="false">自動</button>
+    <button id="openSet" aria-label="設定と時刻表">⚙</button>
+  </div>
+</div>
+<p class="rotate">スマホを横にすると画面いっぱいに表示されます。画面をタップすると進みます。</p>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet-in">
+    <div class="sheet-head">
+      <h1>設定と時刻表</h1>
+      <button class="primary" id="closeSet">運転画面に戻る</button>
+    </div>
+    <div class="cols">
+      <div class="box">
+        <div class="grid">
+          <label for="kind">種別<select id="kind"></select></label>
+          <label for="cars">両数<select id="cars"><option selected>4</option><option>6</option><option>8</option></select></label>
+          <label for="from">始発駅<select id="from"></select></label>
+          <label for="to">行先（終点）<select id="to"></select></label>
+          <label for="start">始発の発車時刻<input type="time" id="start" value="10:00"></label>
+        </div>
+        <p class="err" id="err" hidden>始発駅と行先が同じです。別の駅を選んでください。</p>
+        <div class="nav">
+          <button id="sPrev">◀ 戻る</button>
+          <button class="primary" id="next">進む ▶</button>
+          <button id="full">全画面</button>
+        </div>
+        <p class="note">運転画面をタップすると 停車中 → 走行中 → 接近 → 次の停車駅に停車 と進みます。種別ごとの停車駅は記憶をもとにした仮のものです。時刻表の「停／通」で駅ごとに切り替えられます。時刻は仮に決めた所要時間で計算したサンプルで、実際のダイヤではありません。</p>
+      </div>
+      <section class="box staff">
+        <h2>時刻表</h2>
+        <div class="staff-box" id="staffBox">
+          <table>
+            <thead><tr><th>駅名</th><th>着</th><th>発</th><th style="text-align:center">停／通</th></tr></thead>
+            <tbody id="staff"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+// 大和路線の駅（加茂 → JR難波）。run = 次の駅までの所要分（サンプル）、dwell = 停車分
+const STATIONS = [
+  ["加茂", 6], ["木津", 4], ["平城山", 4], ["奈良", 5, 1], ["郡山", 3], ["大和小泉", 3],
+  ["法隆寺", 4], ["王寺", 2, 1], ["三郷", 3], ["河内堅上", 3], ["高井田", 2], ["柏原", 2],
+  ["志紀", 3], ["八尾", 2], ["久宝寺", 2], ["加美", 2], ["平野", 2], ["東部市場前", 3],
+  ["天王寺", 2, 1], ["新今宮", 2], ["今宮", 2], ["JR難波", 0],
+].map(([name, run, dwell = 0], i) => ({ name, run, dwell, i }));
+
+// 種別ごとの通過駅（仮）。color は画面の種別の文字色
+const KINDS = {
+  "普通":     { color: "var(--ink)", pass: [] },
+  "区間快速": { color: "#0f63b4", pass: ["加美", "平野", "東部市場前"] },
+  "快速":     { color: "#d9480f", pass: ["三郷", "河内堅上", "高井田", "柏原", "志紀", "八尾", "加美", "平野", "東部市場前"] },
+  "大和路快速": { color: "#1f8a3a", pass: ["三郷", "河内堅上", "高井田", "柏原", "志紀", "八尾", "加美", "平野", "東部市場前"] },
+  // お客さんを乗せないので、始発駅と終点以外はすべて通過
+  "回送":     { color: "#4a5359", pass: "all" },
+  "試運転":   { color: "#b3261e", pass: "all" },
+  "回送試運転": { color: "#b3261e", pass: "all" },
+};
+
+const $ = id => document.getElementById(id);
+const state = { kind: "普通", pass: new Set(), from: 0, to: STATIONS.length - 1, idx: 0, phase: "stop", timer: null };
+const PHASES = ["stop", "run", "near"];
+
+const fmt = m => {
+  m = ((m % 1440) + 1440) % 1440;
+  return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+};
+
+function setKind(name) {
+  state.kind = name;
+  const p = KINDS[name].pass;
+  state.pass = new Set(p === "all" ? STATIONS.map(s => s.i) : p.map(n => STATIONS.find(s => s.name === n).i));
+  const el = $("kindV");
+  el.textContent = name;
+  el.style.setProperty("--kind", KINDS[name].color);
+}
+
+// 選んだ区間の時刻を計算する
+function schedule() {
+  const { from, to } = state;
+  const up = from <= to;
+  const list = up ? STATIONS.slice(from, to + 1) : STATIONS.slice(to, from + 1).reverse();
+  const [h, mi] = ($("start").value || "10:00").split(":").map(Number);
+  let t = h * 60 + mi;
+  return list.map((s, k) => {
+    const first = k === 0, last = k === list.length - 1;
+    const stop = first || last || !state.pass.has(s.i);
+    const arr = first ? null : t;
+    const dep = last ? null : (first || !stop ? t : t + s.dwell);
+    if (!last) {
+      // 難波方面は自駅→次駅、加茂方面は手前の駅→自駅の所要時間を使う
+      const run = up ? s.run : STATIONS[s.i - 1].run;
+      t = dep + run;
+    }
+    return { ...s, k, stop, arr, dep, showArr: stop && (last || s.dwell > 0) };
+  });
+}
+
+function render() {
+  const err = state.from === state.to;
+  $("err").hidden = !err;
+  ["next", "prev", "sPrev", "auto"].forEach(id => $(id).disabled = err);
+  if (err) return;
+
+  const sch = schedule();
+  const stops = sch.filter(s => s.stop);   // 停車駅だけを順に進む
+  const last = stops.length - 1;
+  $("dest").textContent = stops[last].name;
+  $("carsV").textContent = $("cars").value;
+
+  const cur = stops[state.idx];
+  const atEnd = state.phase === "stop" && state.idx === last;
+  const nxt = atEnd ? cur : stops[state.idx + 1];
+  const nextIsTerm = !atEnd && state.idx + 1 === last;
+
+  // 黒い帯：次の駅
+  $("band").className = "band" + (state.phase === "near" ? " near" : "") + (atEnd ? " end" : "");
+  $("nextLbl").textContent = atEnd ? "終点" : nextIsTerm ? "次 終点" : state.phase === "near" ? "接近" : "次";
+  $("nextName").textContent = nxt.name;
+  $("nextTime").textContent = "着 " + fmt(nxt.arr);
+
+  // 下のバー・時計
+  const pill = $("pill");
+  let clock;
+  if (atEnd) {
+    pill.className = "pill end"; pill.textContent = "終点";
+    $("msg").textContent = cur.name + " 到着";
+    clock = cur.arr;
+  } else if (state.phase === "stop") {
+    pill.className = "pill stop"; pill.textContent = "停車中";
+    $("msg").textContent = cur.name + " 発 " + fmt(cur.dep);
+    clock = cur.arr ?? cur.dep;
+  } else if (state.phase === "run") {
+    pill.className = "pill run"; pill.textContent = "走行中";
+    const passing = sch.slice(cur.k + 1, nxt.k).map(s => s.name);
+    $("msg").textContent = cur.name + " → " + nxt.name + (passing.length ? "　通過 " + passing.join("・") : "");
+    clock = cur.dep + Math.max(1, Math.floor((nxt.arr - cur.dep) / 2));
+  } else {
+    pill.className = "pill near"; pill.textContent = "接近";
+    $("msg").textContent = nxt.name + " 停車　" + $("cars").value + "両停止目標";
+    clock = nxt.arr - 1 > cur.dep ? nxt.arr - 1 : nxt.arr;
+  }
+  $("clock").textContent = fmt(clock);
+
+  // 時刻表
+  const curRow = (state.phase === "stop" ? cur : nxt).k;
+  const end = sch.length - 1;
+  $("staff").innerHTML = sch.map((s, k) => {
+    const cls = [k < curRow ? "passed" : "", k === curRow ? "cur" : "", s.stop ? "" : "pass"].join(" ");
+    const a = s.showArr && s.arr != null ? fmt(s.arr) : "";
+    // 通過駅は時刻の代わりに「レ」（時刻表の通過記号）
+    const d = !s.stop ? "レ" : s.dep != null ? fmt(s.dep) : "終点";
+    const fixed = k === 0 || k === end;
+    const mk = `<button class="${s.stop ? "stop" : ""}" data-i="${s.i}" ${fixed ? "disabled" : ""}>${s.stop ? "停" : "通"}</button>`;
+    return `<tr class="${cls}"><td>${s.name}</td><td class="t">${a}</td><td class="t">${d}</td><td class="mk">${mk}</td></tr>`;
+  }).join("");
+  const row = $("staff").children[curRow];
+  if (row && !$("sheet").hidden) $("staffBox").scrollTop = Math.max(0, row.offsetTop - 80);
+
+  const atStart = state.idx === 0 && state.phase === "stop";
+  $("prev").disabled = $("sPrev").disabled = atStart;
+  $("next").disabled = atEnd;
+  if (atEnd) stopAuto();
+  fitAll();
+}
+
+// 文字が枠からはみ出すときは、収まるまで文字を小さくする（途中で切れないように）
+function fit(el) {
+  el.style.fontSize = "";
+  let fs = parseFloat(getComputedStyle(el).fontSize);
+  while (el.scrollWidth > el.clientWidth && fs > 12) {
+    fs -= 1;
+    el.style.fontSize = fs + "px";
+  }
+}
+function fitAll() { fit($("kindV")); fit($("dest")); fit($("nextName")); }
+
+function step(dir) {
+  if (state.from === state.to) return;
+  const last = schedule().filter(s => s.stop).length - 1;
+  if (dir > 0 && state.phase === "stop" && state.idx >= last) return;
+  let p = PHASES.indexOf(state.phase) + dir;
+  if (p > 2) { state.idx++; p = 0; }
+  if (p < 0) { if (state.idx === 0) return; state.idx--; p = 2; }
+  if (state.idx >= last) { state.idx = last; p = 0; }
+  state.phase = PHASES[p];
+  render();
+}
+
+function reset() { stopAuto(); state.idx = 0; state.phase = "stop"; render(); }
+function stopAuto() {
+  clearInterval(state.timer); state.timer = null;
+  $("auto").setAttribute("aria-pressed", "false"); $("auto").textContent = "自動";
+}
+
+// 運転中に画面が暗くならないようにする（使えない環境では何もしない）
+let wakeLock = null;
+async function keepAwake() {
+  if (wakeLock || !("wakeLock" in navigator)) return;
+  try { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => wakeLock = null); } catch {}
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") wakeLock = null; });
+
+// 全画面＋横向き固定（対応している端末だけ）
+async function goFull() {
+  try { await document.documentElement.requestFullscreen(); } catch {}
+  try { await screen.orientation.lock("landscape"); } catch {}
+}
+
+// 選択肢をつくる
+for (const sel of [$("from"), $("to")]) {
+  sel.innerHTML = STATIONS.map(s => `<option value="${s.i}">${s.name}</option>`).join("");
+}
+$("from").value = state.from; $("to").value = state.to;
+$("kind").innerHTML = Object.keys(KINDS).map(k => `<option>${k}</option>`).join("");
+setKind("普通");
+
+// 操作
+for (const id of ["tapMain", "tapCars"]) $(id).addEventListener("click", () => { keepAwake(); step(1); });
+$("next").addEventListener("click", () => step(1));
+$("prev").addEventListener("click", () => step(-1));
+$("sPrev").addEventListener("click", () => step(-1));
+$("auto").addEventListener("click", () => {
+  keepAwake();
+  if (state.timer) return stopAuto();
+  state.timer = setInterval(() => step(1), 1800);
+  $("auto").setAttribute("aria-pressed", "true"); $("auto").textContent = "停止";
+});
+$("openSet").addEventListener("click", () => { $("sheet").hidden = false; render(); });
+$("closeSet").addEventListener("click", () => { $("sheet").hidden = true; fitAll(); });
+$("full").addEventListener("click", goFull);
+
+$("kind").addEventListener("change", e => { setKind(e.target.value); reset(); });
+$("from").addEventListener("change", e => { state.from = +e.target.value; reset(); });
+$("to").addEventListener("change", e => { state.to = +e.target.value; reset(); });
+$("cars").addEventListener("change", render);
+$("start").addEventListener("change", reset);
+$("staff").addEventListener("click", e => {
+  const b = e.target.closest("button[data-i]");
+  if (!b || b.disabled) return;
+  const i = +b.dataset.i;
+  state.pass.has(i) ? state.pass.delete(i) : state.pass.add(i);
+  reset();
+});
+
+window.addEventListener("resize", fitAll);
+if (document.fonts) document.fonts.ready.then(fitAll);
+render();
+
+// ネットなしでも開けるように、アプリのファイルをスマホに保存しておく
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+</body>
+</html>
